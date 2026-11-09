@@ -132,6 +132,7 @@
 
   function playBeep() {
     if (!soundOn || !audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     [0, 0.25, 0.5].forEach(function (t) {
       var now = audioCtx.currentTime + t;
       var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
@@ -148,14 +149,34 @@
   function alertNew(row) {
     playBeep();
     if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification('New order #' + row.order_number, {
-          body: row.customer_name + ' - ' + money(row.total),
-          tag: 'order-' + row.id
-        });
-      } catch (e) { /* notifications unavailable */ }
+      var title = 'New order #' + row.order_number;
+      var opts = {
+        body: row.customer_name + ' - ' + money(row.total),
+        tag: 'order-' + row.id,
+        vibrate: [200, 100, 200]
+      };
+      // Android Chrome only supports notifications via the service worker
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          reg.showNotification(title, opts);
+        }).catch(function () { /* notifications unavailable */ });
+      } else {
+        try { new Notification(title, opts); } catch (e) { /* notifications unavailable */ }
+      }
     }
   }
+
+  // Phones suspend audio and drop realtime when the screen locks or the tab is hidden
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible' || !sb || $('app').classList.contains('hidden')) return;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    loadOrders();
+    if (channel && channel.state !== 'joined') {
+      sb.removeChannel(channel);
+      channel = null;
+      subscribe();
+    }
+  });
 
   function subscribe() {
     if (channel) return;
@@ -214,6 +235,10 @@
       $('notifBtn').textContent = p === 'granted' ? 'Alerts on' : 'Alerts blocked';
     });
   };
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* optional */ });
+  }
 
   $('loginForm').onsubmit = async function (e) {
     e.preventDefault();
