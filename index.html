@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Yummy Nam - Live Orders</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; background: #fff7fb; color: #222; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; background: #e11d48; color: #fff; }
+  header h1 { font-size: 20px; margin: 0; }
+  .hbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 10px; padding: 9px 14px; background: #fff; color: #e11d48; font-weight: 600; }
+  button.ghost { background: transparent; color: #fff; border: 2px solid #fff; }
+  button:disabled { opacity: .6; cursor: default; }
+  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  .login { max-width: 360px; margin: 60px auto; background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+  .login label { display: block; font-size: 14px; margin-bottom: 10px; }
+  .login input { width: 100%; padding: 12px; margin-top: 6px; border: 2px solid #f7b6d2; border-radius: 10px; font: inherit; }
+  .login button { width: 100%; background: #e11d48; color: #fff; margin-top: 4px; }
+  .err { color: #e11d48; min-height: 1.2em; margin: 8px 0 0; font-size: 14px; }
+  .bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .pill { font-size: 13px; color: #555; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .card { background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.07); border-top: 6px solid #f59e0b; }
+  .card.preparing { border-color: #3b82f6; }
+  .card.ready { border-color: #22c55e; }
+  .card.completed { border-color: #9ca3af; opacity: .65; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .no { font-size: 20px; font-weight: 800; }
+  .time { font-size: 12px; color: #666; }
+  .cust { margin: 10px 0; font-size: 15px; line-height: 1.5; }
+  .cust a { color: #e11d48; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
+  .total { display: flex; justify-content: space-between; font-weight: 800; font-size: 17px; margin: 10px 0; }
+  .status { display: flex; gap: 6px; flex-wrap: wrap; }
+  .status button { background: #f3f4f6; color: #333; padding: 7px 10px; font-size: 13px; }
+  .status button.on { background: #e11d48; color: #fff; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<section id="login" class="login hidden">
+  <h2>Staff login</h2>
+  <form id="loginForm">
+    <label>Email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+    <p class="err" id="loginErr"></p>
+  </form>
+</section>
+
+<header id="top" class="hidden">
+  <h1>Yummy Nam - Live Orders</h1>
+  <div class="hbtns">
+    <button id="soundBtn" type="button">Enable sound</button>
+    <button id="notifBtn" type="button">Enable alerts</button>
+    <button id="logoutBtn" type="button" class="ghost">Sign out</button>
+  </div>
+</header>
+
+<main id="app" class="hidden">
+  <div class="bar">
+    <span class="pill" id="liveState">Connecting...</span>
+    <span class="pill" id="count"></span>
+  </div>
+  <div id="orders" class="grid"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script>
+(function () {
+  var STATUSES = ['new', 'preparing', 'ready', 'completed'];
+  var cfg = window.YUMMY_SUPABASE || {};
+  var configured = !!(window.supabase && cfg.url && cfg.url.indexOf('YOUR-') === -1);
+  var sb = null, channel = null, orders = [], audioCtx = null, soundOn = false;
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function money(n) { return Number(n).toFixed(2) + ' AED'; }
+  function when(iso) { return new Date(iso).toLocaleString(); }
+
+  function showLogin() {
+    $('login').classList.remove('hidden');
+    $('top').classList.add('hidden');
+    $('app').classList.add('hidden');
+  }
+  function showApp() {
+    $('login').classList.add('hidden');
+    $('top').classList.remove('hidden');
+    $('app').classList.remove('hidden');
+  }
+
+  function render() {
+    $('count').textContent = orders.length + ' orders';
+    $('orders').innerHTML = orders.map(function (o) {
+      var items = (o.items || []).map(function (it) {
+        return '<li><span>' + esc(it.name) + (it.spice ? ' (' + esc(it.spice) + ')' : '') +
+               ' x ' + esc(it.qty) + '</span><span>' + money(it.line_total) + '</span></li>';
+      }).join('');
+      var btns = STATUSES.map(function (s) {
+        return '<button type="button" data-id="' + esc(o.id) + '" data-status="' + s + '"' +
+               (o.status === s ? ' class="on"' : '') + '>' + s + '</button>';
+      }).join('');
+      return '<article class="card ' + esc(o.status) + '">' +
+        '<div class="top"><span class="no">#' + esc(o.order_number) + '</span>' +
+        '<span class="time">' + esc(when(o.created_at)) + '</span></div>' +
+        '<div class="cust"><strong>' + esc(o.customer_name) + '</strong><br>' +
+        '<a href="tel:' + esc(o.customer_phone) + '">' + esc(o.customer_phone) + '</a></div>' +
+        '<ul>' + items + '</ul>' +
+        '<div class="total"><span>Total</span><span>' + money(o.total) + '</span></div>' +
+        '<div class="status">' + btns + '</div>' +
+        '</article>';
+    }).join('') || '<p>No orders yet.</p>';
+  }
+
+  function upsert(row, isNew) {
+    var i = orders.findIndex(function (o) { return o.id === row.id; });
+    if (i >= 0) orders[i] = row; else orders.unshift(row);
+    render();
+    if (isNew) alertNew(row);
+  }
+
+  function playBeep() {
+    if (!soundOn || !audioCtx) return;
+    [0, 0.25, 0.5].forEach(function (t) {
+      var now = audioCtx.currentTime + t;
+      var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.22);
+    });
+  }
+
+  function alertNew(row) {
+    playBeep();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('New order #' + row.order_number, {
+          body: row.customer_name + ' - ' + money(row.total),
+          tag: 'order-' + row.id
+        });
+      } catch (e) { /* notifications unavailable */ }
+    }
+  }
+
+  function subscribe() {
+    if (channel) return;
+    channel = sb.channel('orders-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
+        function (p) { upsert(p.new, true); })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
+        function (p) { upsert(p.new, false); })
+      .subscribe(function (status) {
+        $('liveState').textContent = status === 'SUBSCRIBED' ? 'Live' : 'Status: ' + status;
+      });
+  }
+
+  async function loadOrders() {
+    var r = await sb.from('orders').select('*').order('created_at', { ascending: false }).limit(200);
+    if (r.error) { alert('Could not load orders: ' + r.error.message); return; }
+    orders = r.data || [];
+    render();
+  }
+
+  async function enter() {
+    var r = await sb.rpc('is_admin');
+    if (r.error || r.data !== true) {
+      await sb.auth.signOut();
+      showLogin();
+      $('loginErr').textContent = 'This account is not allowed to view orders.';
+      return;
+    }
+    showApp();
+    await loadOrders();
+    subscribe();
+  }
+
+  async function setStatus(id, status) {
+    var r = await sb.from('orders').update({ status: status }).eq('id', id).select().single();
+    if (r.error) { alert('Could not update status: ' + r.error.message); return; }
+    upsert(r.data, false);
+  }
+
+  $('orders').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-id]');
+    if (b) setStatus(b.dataset.id, b.dataset.status);
+  });
+
+  $('soundBtn').onclick = function () {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+    soundOn = true;
+    playBeep();
+    $('soundBtn').textContent = 'Sound on';
+  };
+
+  $('notifBtn').onclick = function () {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(function (p) {
+      $('notifBtn').textContent = p === 'granted' ? 'Alerts on' : 'Alerts blocked';
+    });
+  };
+
+  $('loginForm').onsubmit = async function (e) {
+    e.preventDefault();
+    $('loginErr').textContent = '';
+    if (!sb) { $('loginErr').textContent = 'Setup needed: fill in supabase-config.js.'; return; }
+    var r = await sb.auth.signInWithPassword({
+      email: $('email').value.trim(),
+      password: $('password').value
+    });
+    $('password').value = '';
+    if (r.error) { $('loginErr').textContent = 'Wrong email or password.'; return; }
+    await enter();
+  };
+
+  $('logoutBtn').onclick = async function () {
+    if (channel) { await sb.removeChannel(channel); channel = null; }
+    await sb.auth.signOut();
+    orders = [];
+    showLogin();
+  };
+
+  if (!configured) {
+    showLogin();
+    $('loginErr').textContent = 'Setup needed: fill in supabase-config.js.';
+    return;
+  }
+
+  sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+  sb.auth.getSession().then(function (r) {
+    if (r.data && r.data.session) enter(); else showLogin();
+  });
+})();
+</script>
+</body>
+</html>
