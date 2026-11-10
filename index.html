@@ -63,6 +63,9 @@
   .fbtns button.ghost2 { background: #f3f4f6; color: #333; }
   .mform .days { grid-column: 1 / -1; border: 2px solid #f7b6d2; border-radius: 10px; display: flex; gap: 12px; flex-wrap: wrap; padding: 10px; margin: 0; }
   .mform .days label { flex-direction: row; align-items: center; gap: 4px; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 14px auto 0; padding: 0 16px; }
+  .tabs button { background: #fff; color: #e11d48; border: 2px solid #f7b6d2; }
+  .tabs button.on { background: #e11d48; color: #fff; border-color: #e11d48; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -83,11 +86,15 @@
   <div class="hbtns">
     <button id="soundBtn" type="button">Enable sound</button>
     <button id="notifBtn" type="button">Enable alerts</button>
-    <button id="menuBtn" type="button" class="ghost">Menu &amp; hours</button>
-    <button id="acctBtn" type="button" class="ghost">Account</button>
     <button id="logoutBtn" type="button" class="ghost">Sign out</button>
   </div>
 </header>
+
+<nav id="tabs" class="tabs hidden">
+  <button type="button" data-tab="orders" class="on">Orders</button>
+  <button type="button" data-tab="menu">Menu &amp; hours</button>
+  <button type="button" data-tab="account">Account</button>
+</nav>
 
 <main id="app" class="hidden">
   <section id="account" class="login acct hidden">
@@ -141,6 +148,7 @@
     </form>
   </section>
 
+  <div id="ordersSec">
   <div class="bar">
     <span class="pill" id="liveState">Connecting...</span>
     <span class="pill" id="count"></span>
@@ -149,6 +157,7 @@
 
   <h2 class="sec">Ready / completed <span class="pill" id="doneCount"></span></h2>
   <div id="doneOrders" class="grid"></div>
+  </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -173,6 +182,7 @@
   function showLogin() {
     $('login').classList.remove('hidden');
     $('top').classList.add('hidden');
+    $('tabs').classList.add('hidden');
     $('app').classList.add('hidden');
     $('account').classList.add('hidden');
     $('menuPanel').classList.add('hidden');
@@ -180,7 +190,20 @@
   function showApp() {
     $('login').classList.add('hidden');
     $('top').classList.remove('hidden');
+    $('tabs').classList.remove('hidden');
     $('app').classList.remove('hidden');
+    showTab('orders');
+  }
+
+  function showTab(name) {
+    document.querySelectorAll('#tabs button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.tab === name);
+    });
+    $('ordersSec').classList.toggle('hidden', name !== 'orders');
+    $('menuPanel').classList.toggle('hidden', name !== 'menu');
+    $('account').classList.toggle('hidden', name !== 'account');
+    if (name === 'menu') { loadMenu(); loadHours(); }
+    if (name === 'account') loadAccount();
   }
 
   function cards(list, canDelete) {
@@ -390,14 +413,13 @@
     await enter();
   };
 
-  $('acctBtn').onclick = async function () {
+  async function loadAccount() {
     var r = await sb.auth.getUser();
     var u = r.data && r.data.user;
     $('acctEmail').textContent = u ? u.email : '';
     $('acctName').value = (u && u.user_metadata && u.user_metadata.name) || '';
     $('acctErr').textContent = '';
-    $('account').classList.toggle('hidden');
-  };
+  }
 
   $('acctForm').onsubmit = async function (e) {
     e.preventDefault();
@@ -591,10 +613,9 @@
     $('hErr').textContent = 'Saved.';
   };
 
-  $('menuBtn').onclick = function () {
-    var p = $('menuPanel');
-    p.classList.toggle('hidden');
-    if (!p.classList.contains('hidden')) { loadMenu(); loadHours(); }
+  $('tabs').onclick = function (e) {
+    var b = e.target.closest('button[data-tab]');
+    if (b) showTab(b.dataset.tab);
   };
 
   fillHourSelects();
