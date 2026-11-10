@@ -84,7 +84,7 @@
   </div>
   <div id="orders" class="grid"></div>
 
-  <h2 class="sec">Completed orders <span class="pill" id="doneCount"></span></h2>
+  <h2 class="sec">Ready / completed <span class="pill" id="doneCount"></span></h2>
   <div id="doneOrders" class="grid"></div>
 </main>
 
@@ -142,8 +142,8 @@
   }
 
   function render() {
-    var active = orders.filter(function (o) { return o.status !== 'completed'; });
-    var done = orders.filter(function (o) { return o.status === 'completed'; });
+    var active = orders.filter(function (o) { return o.status === 'new' || o.status === 'preparing'; });
+    var done = orders.filter(function (o) { return o.status === 'ready' || o.status === 'completed'; });
     $('count').textContent = active.length + ' active';
     $('doneCount').textContent = done.length;
     $('orders').innerHTML = cards(active) || '<p>No active orders.</p>';
