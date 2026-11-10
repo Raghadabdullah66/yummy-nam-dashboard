@@ -472,10 +472,14 @@
     renderMenuList();
   }
 
+  // Seeded items store site-relative paths (images/...), which must resolve on the main site.
+  var SITE_URL = 'https://yummynam.ae/';
+  function imgUrl(p) { return /^https?:/.test(p) ? p : SITE_URL + p.replace(/^\/+/, ''); }
+
   function renderMenuList() {
     $('menuList').innerHTML = menuItems.map(function (m) {
       return '<li class="mrow' + (m.active ? '' : ' off') + '">' +
-        (m.img ? '<img src="' + esc(m.img) + '" alt="">' : '<span class="noimg"></span>') +
+        (m.img ? '<img src="' + esc(imgUrl(m.img)) + '" alt="">' : '<span class="noimg"></span>') +
         '<div class="minfo"><strong>' + esc(m.name) + '</strong>' +
         '<span>' + esc(m.name_ar || '') + ' · ' + (m.category === 'corndog' ? 'Corn dog' : 'Ramyun') +
         ' · ' + money(m.price) + (m.active ? '' : ' · hidden') + '</span></div>' +
