@@ -40,6 +40,7 @@
   .status button.on { background: #e11d48; color: #fff; }
   .acct { margin: 0 auto 18px; }
   .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; font-size: 18px; }
+  .status button.del { color: #e11d48; border-color: #e11d48; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -119,7 +120,7 @@
     $('app').classList.remove('hidden');
   }
 
-  function cards(list) {
+  function cards(list, canDelete) {
     return list.map(function (o) {
       var items = (o.items || []).map(function (it) {
         return '<li><span>' + esc(it.name) + (it.spice ? ' (' + esc(it.spice) + ')' : '') +
@@ -136,7 +137,9 @@
         '<a href="tel:' + esc(o.customer_phone) + '">' + esc(o.customer_phone) + '</a></div>' +
         '<ul>' + items + '</ul>' +
         '<div class="total"><span>Total</span><span>' + money(o.total) + '</span></div>' +
-        '<div class="status">' + btns + '</div>' +
+        '<div class="status">' + btns +
+        (canDelete ? '<button type="button" class="ghost del" data-del="' + esc(o.id) + '">Delete</button>' : '') +
+        '</div>' +
         '</article>';
     }).join('');
   }
@@ -146,8 +149,8 @@
     var done = orders.filter(function (o) { return o.status === 'ready' || o.status === 'completed'; });
     $('count').textContent = active.length + ' active';
     $('doneCount').textContent = done.length;
-    $('orders').innerHTML = cards(active) || '<p>No active orders.</p>';
-    $('doneOrders').innerHTML = cards(done) || '<p>No completed orders yet.</p>';
+    $('orders').innerHTML = cards(active, false) || '<p>No active orders.</p>';
+    $('doneOrders').innerHTML = cards(done, true) || '<p>No completed orders yet.</p>';
   }
 
   function upsert(row, isNew) {
@@ -155,6 +158,11 @@
     if (i >= 0) orders[i] = row; else orders.unshift(row);
     render();
     if (isNew) alertNew(row);
+  }
+
+  function removeOrder(id) {
+    orders = orders.filter(function (o) { return o.id !== id; });
+    render();
   }
 
   // iOS Safari only lets audio start later if it was unlocked by a tap; reuse one <audio> element for that
@@ -234,6 +242,8 @@
         function (p) { upsert(p.new, true); })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
         function (p) { upsert(p.new, false); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' },
+        function (p) { removeOrder(p.old.id); })
       .subscribe(function (status) {
         $('liveState').textContent = status === 'SUBSCRIBED' ? 'Live' : 'Status: ' + status;
       });
@@ -265,7 +275,17 @@
     upsert(r.data, false);
   }
 
+  async function deleteOrder(id) {
+    if (!confirm('Delete this order permanently?')) return;
+    var r = await sb.from('orders').delete().eq('id', id).select();
+    if (r.error) { alert('Could not delete order: ' + r.error.message); return; }
+    if (!r.data || r.data.length === 0) { alert('Order was not deleted. Check admin permissions.'); return; }
+    removeOrder(id);
+  }
+
   document.addEventListener('click', function (e) {
+    var d = e.target.closest('button[data-del]');
+    if (d) { deleteOrder(d.dataset.del); return; }
     var b = e.target.closest('button[data-id]');
     if (b) setStatus(b.dataset.id, b.dataset.status);
   });
