@@ -38,6 +38,8 @@
   .status { display: flex; gap: 6px; flex-wrap: wrap; }
   .status button { background: #f3f4f6; color: #333; padding: 7px 10px; font-size: 13px; }
   .status button.on { background: #e11d48; color: #fff; }
+  .acct { margin: 0 auto 18px; }
+  .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; font-size: 18px; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -58,16 +60,32 @@
   <div class="hbtns">
     <button id="soundBtn" type="button">Enable sound</button>
     <button id="notifBtn" type="button">Enable alerts</button>
+    <button id="acctBtn" type="button" class="ghost">Account</button>
     <button id="logoutBtn" type="button" class="ghost">Sign out</button>
   </div>
 </header>
 
 <main id="app" class="hidden">
+  <section id="account" class="login acct hidden">
+    <h2>Account</h2>
+    <p class="pill" id="acctEmail"></p>
+    <form id="acctForm">
+      <label>Name<input id="acctName" type="text" autocomplete="name"></label>
+      <label>New password (min 8 characters)<input id="newPw" type="password" autocomplete="new-password"></label>
+      <label>Confirm new password<input id="newPw2" type="password" autocomplete="new-password"></label>
+      <button type="submit">Save</button>
+      <p class="err" id="acctErr"></p>
+    </form>
+  </section>
+
   <div class="bar">
     <span class="pill" id="liveState">Connecting...</span>
     <span class="pill" id="count"></span>
   </div>
   <div id="orders" class="grid"></div>
+
+  <h2 class="sec">Completed orders <span class="pill" id="doneCount"></span></h2>
+  <div id="doneOrders" class="grid"></div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -93,6 +111,7 @@
     $('login').classList.remove('hidden');
     $('top').classList.add('hidden');
     $('app').classList.add('hidden');
+    $('account').classList.add('hidden');
   }
   function showApp() {
     $('login').classList.add('hidden');
@@ -100,9 +119,8 @@
     $('app').classList.remove('hidden');
   }
 
-  function render() {
-    $('count').textContent = orders.length + ' orders';
-    $('orders').innerHTML = orders.map(function (o) {
+  function cards(list) {
+    return list.map(function (o) {
       var items = (o.items || []).map(function (it) {
         return '<li><span>' + esc(it.name) + (it.spice ? ' (' + esc(it.spice) + ')' : '') +
                ' x ' + esc(it.qty) + '</span><span>' + money(it.line_total) + '</span></li>';
@@ -120,7 +138,16 @@
         '<div class="total"><span>Total</span><span>' + money(o.total) + '</span></div>' +
         '<div class="status">' + btns + '</div>' +
         '</article>';
-    }).join('') || '<p>No orders yet.</p>';
+    }).join('');
+  }
+
+  function render() {
+    var active = orders.filter(function (o) { return o.status !== 'completed'; });
+    var done = orders.filter(function (o) { return o.status === 'completed'; });
+    $('count').textContent = active.length + ' active';
+    $('doneCount').textContent = done.length;
+    $('orders').innerHTML = cards(active) || '<p>No active orders.</p>';
+    $('doneOrders').innerHTML = cards(done) || '<p>No completed orders yet.</p>';
   }
 
   function upsert(row, isNew) {
@@ -238,7 +265,7 @@
     upsert(r.data, false);
   }
 
-  $('orders').addEventListener('click', function (e) {
+  document.addEventListener('click', function (e) {
     var b = e.target.closest('button[data-id]');
     if (b) setStatus(b.dataset.id, b.dataset.status);
   });
@@ -278,6 +305,30 @@
     $('password').value = '';
     if (r.error) { $('loginErr').textContent = 'Wrong email or password.'; return; }
     await enter();
+  };
+
+  $('acctBtn').onclick = async function () {
+    var r = await sb.auth.getUser();
+    var u = r.data && r.data.user;
+    $('acctEmail').textContent = u ? u.email : '';
+    $('acctName').value = (u && u.user_metadata && u.user_metadata.name) || '';
+    $('acctErr').textContent = '';
+    $('account').classList.toggle('hidden');
+  };
+
+  $('acctForm').onsubmit = async function (e) {
+    e.preventDefault();
+    var p = $('newPw').value, p2 = $('newPw2').value, err = '';
+    if (p && p.length < 8) err = 'Password must be at least 8 characters.';
+    else if (p !== p2) err = 'Passwords do not match.';
+    if (err) { $('acctErr').textContent = err; return; }
+    var attrs = { data: { name: $('acctName').value.trim() } };
+    if (p) attrs.password = p;
+    var r = await sb.auth.updateUser(attrs);
+    if (r.error) { $('acctErr').textContent = r.error.message; return; }
+    $('newPw').value = '';
+    $('newPw2').value = '';
+    $('acctErr').textContent = 'Saved.';
   };
 
   $('logoutBtn').onclick = async function () {
