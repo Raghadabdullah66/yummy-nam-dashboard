@@ -41,6 +41,28 @@
   .acct { margin: 0 auto 18px; }
   .sec { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; font-size: 18px; }
   .status button.del { color: #e11d48; border-color: #e11d48; }
+  .panel { background: #fff; border-radius: 16px; padding: 18px; box-shadow: 0 6px 20px rgba(0,0,0,.08); margin: 0 0 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 20px; }
+  .sub { font-size: 16px; margin: 22px 0 10px; }
+  .mlist li { flex-wrap: wrap; align-items: center; }
+  .mrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .mrow img, .mrow .noimg { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; background: #fdf2f8; flex: none; }
+  .mrow .minfo { flex: 1; min-width: 160px; display: flex; flex-direction: column; }
+  .mrow .minfo span { color: #666; font-size: 14px; }
+  .mrow.off { opacity: .55; }
+  .mact { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mact button { padding: 7px 10px; font-size: 13px; background: #f3f4f6; color: #333; }
+  .mact button.danger { background: #fff; color: #e11d48; border: 2px solid #e11d48; }
+  .mform { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; }
+  .mform label { display: flex; flex-direction: column; font-size: 14px; gap: 4px; }
+  .mform input[type=text], .mform input[type=number], .mform select { padding: 10px; border: 2px solid #f7b6d2; border-radius: 10px; font: inherit; }
+  .mform label.chk { flex-direction: row; align-items: center; }
+  .mform .fbtns, .mform .err { grid-column: 1 / -1; }
+  .fbtns { display: flex; gap: 8px; }
+  .fbtns button { background: #e11d48; color: #fff; }
+  .fbtns button.ghost2 { background: #f3f4f6; color: #333; }
+  .mform .days { grid-column: 1 / -1; border: 2px solid #f7b6d2; border-radius: 10px; display: flex; gap: 12px; flex-wrap: wrap; padding: 10px; margin: 0; }
+  .mform .days label { flex-direction: row; align-items: center; gap: 4px; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -61,6 +83,7 @@
   <div class="hbtns">
     <button id="soundBtn" type="button">Enable sound</button>
     <button id="notifBtn" type="button">Enable alerts</button>
+    <button id="menuBtn" type="button" class="ghost">Menu &amp; hours</button>
     <button id="acctBtn" type="button" class="ghost">Account</button>
     <button id="logoutBtn" type="button" class="ghost">Sign out</button>
   </div>
@@ -76,6 +99,45 @@
       <label>Confirm new password<input id="newPw2" type="password" autocomplete="new-password"></label>
       <button type="submit">Save</button>
       <p class="err" id="acctErr"></p>
+    </form>
+  </section>
+
+  <section id="menuPanel" class="panel hidden">
+    <h2>Menu</h2>
+    <ul id="menuList" class="mlist"></ul>
+
+    <h3 class="sub" id="menuFormTitle">Add item</h3>
+    <form id="menuForm" class="mform">
+      <input type="hidden" id="mId">
+      <label>Name (English)<input id="mName" type="text" maxlength="60" required></label>
+      <label>Name (Arabic)<input id="mNameAr" type="text" maxlength="60"></label>
+      <label>Category<select id="mCat"><option value="ramyun">Ramyun</option><option value="corndog">Corn dog</option></select></label>
+      <label>Price (AED)<input id="mPrice" type="number" min="0" step="0.5" required></label>
+      <label>Photo<input id="mImg" type="file" accept="image/*"></label>
+      <label class="chk"><input id="mActive" type="checkbox" checked> Show on menu</label>
+      <div class="fbtns">
+        <button type="submit" id="mSave">Add item</button>
+        <button type="button" id="mCancel" class="ghost2">Cancel</button>
+      </div>
+      <p class="err" id="mErr"></p>
+    </form>
+
+    <h3 class="sub">Order hours</h3>
+    <form id="hoursForm" class="mform">
+      <fieldset class="days">
+        <legend>Open days</legend>
+        <label><input type="checkbox" value="Sun"> Sun</label>
+        <label><input type="checkbox" value="Mon"> Mon</label>
+        <label><input type="checkbox" value="Tue"> Tue</label>
+        <label><input type="checkbox" value="Wed"> Wed</label>
+        <label><input type="checkbox" value="Thu"> Thu</label>
+        <label><input type="checkbox" value="Fri"> Fri</label>
+        <label><input type="checkbox" value="Sat"> Sat</label>
+      </fieldset>
+      <label>Opens (UAE time)<select id="hOpen"></select></label>
+      <label>Closes (UAE time)<select id="hClose"></select></label>
+      <div class="fbtns"><button type="submit">Save hours</button></div>
+      <p class="err" id="hErr"></p>
     </form>
   </section>
 
@@ -96,7 +158,7 @@
   var STATUSES = ['new', 'preparing', 'ready', 'completed'];
   var cfg = window.YUMMY_SUPABASE || {};
   var configured = !!(window.supabase && cfg.url && cfg.url.indexOf('YOUR-') === -1);
-  var sb = null, channel = null, orders = [], audioCtx = null, beepEl = null, soundOn = false;
+  var sb = null, channel = null, orders = [], menuItems = [], audioCtx = null, beepEl = null, soundOn = false;
 
   function $(id) { return document.getElementById(id); }
 
@@ -113,6 +175,7 @@
     $('top').classList.add('hidden');
     $('app').classList.add('hidden');
     $('account').classList.add('hidden');
+    $('menuPanel').classList.add('hidden');
   }
   function showApp() {
     $('login').classList.add('hidden');
@@ -357,6 +420,184 @@
     orders = [];
     showLogin();
   };
+
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function slugify(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
+  }
+
+  function findMenu(id) {
+    return menuItems.find(function (m) { return m.id === id; });
+  }
+
+  async function loadMenu() {
+    var r = await sb.from('menu_items').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true });
+    if (r.error) { alert('Could not load menu: ' + r.error.message); return; }
+    menuItems = r.data || [];
+    renderMenuList();
+  }
+
+  function renderMenuList() {
+    $('menuList').innerHTML = menuItems.map(function (m) {
+      return '<li class="mrow' + (m.active ? '' : ' off') + '">' +
+        (m.img ? '<img src="' + esc(m.img) + '" alt="">' : '<span class="noimg"></span>') +
+        '<div class="minfo"><strong>' + esc(m.name) + '</strong>' +
+        '<span>' + esc(m.name_ar || '') + ' · ' + (m.category === 'corndog' ? 'Corn dog' : 'Ramyun') +
+        ' · ' + money(m.price) + (m.active ? '' : ' · hidden') + '</span></div>' +
+        '<div class="mact">' +
+        '<button type="button" data-mtoggle="' + esc(m.id) + '">' + (m.active ? 'Hide' : 'Show') + '</button>' +
+        '<button type="button" data-medit="' + esc(m.id) + '">Edit</button>' +
+        '<button type="button" class="danger" data-mdel="' + esc(m.id) + '">Delete</button>' +
+        '</div></li>';
+    }).join('') || '<li>No items yet.</li>';
+  }
+
+  function resetMenuForm() {
+    $('menuForm').reset();
+    $('mId').value = '';
+    $('mActive').checked = true;
+    $('menuFormTitle').textContent = 'Add item';
+    $('mSave').textContent = 'Add item';
+    $('mErr').textContent = '';
+  }
+
+  function editMenu(id) {
+    var m = findMenu(id);
+    if (!m) return;
+    $('mId').value = m.id;
+    $('mName').value = m.name;
+    $('mNameAr').value = m.name_ar || '';
+    $('mCat').value = m.category;
+    $('mPrice').value = m.price;
+    $('mActive').checked = m.active;
+    $('mImg').value = '';
+    $('menuFormTitle').textContent = 'Edit item (leave photo empty to keep current)';
+    $('mSave').textContent = 'Save changes';
+    $('mErr').textContent = '';
+    $('mName').focus();
+  }
+
+  $('mCancel').onclick = resetMenuForm;
+
+  $('menuForm').onsubmit = async function (e) {
+    e.preventDefault();
+    var id = $('mId').value, existing = id ? findMenu(id) : null;
+    var file = $('mImg').files[0], price = Number($('mPrice').value), err = '';
+    if (!$('mName').value.trim()) err = 'Enter a name.';
+    else if (!(price >= 0)) err = 'Enter a valid price.';
+    else if (!existing && !file) err = 'Choose a photo for the new item.';
+    if (err) { $('mErr').textContent = err; return; }
+
+    $('mSave').disabled = true;
+    try {
+      var img = existing ? existing.img : null;
+      if (file) {
+        var ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        var path = slugify($('mName').value) + '-' + Date.now() + '.' + ext;
+        var up = await sb.storage.from('menu-images').upload(path, file, { contentType: file.type, upsert: false });
+        if (up.error) throw new Error('Photo upload failed: ' + up.error.message);
+        img = sb.storage.from('menu-images').getPublicUrl(path).data.publicUrl;
+      }
+      var row = {
+        name: $('mName').value.trim(),
+        name_ar: $('mNameAr').value.trim() || null,
+        category: $('mCat').value,
+        price: price,
+        active: $('mActive').checked,
+        img: img
+      };
+      var r;
+      if (existing) {
+        r = await sb.from('menu_items').update(row).eq('id', id).select();
+      } else {
+        var maxOrder = menuItems.reduce(function (mx, m) { return Math.max(mx, m.sort_order || 0); }, 0);
+        row.id = slugify($('mName').value) + '-' + Date.now().toString(36);
+        row.sort_order = maxOrder + 10;
+        r = await sb.from('menu_items').insert(row).select();
+      }
+      if (r.error) throw new Error(r.error.message);
+      if (!r.data || r.data.length === 0) throw new Error('Not saved. Check admin permissions.');
+      resetMenuForm();
+      await loadMenu();
+    } catch (ex) {
+      $('mErr').textContent = ex.message;
+    } finally {
+      $('mSave').disabled = false;
+    }
+  };
+
+  $('menuList').onclick = async function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.medit) { editMenu(b.dataset.medit); return; }
+    if (b.dataset.mtoggle) {
+      var m = findMenu(b.dataset.mtoggle);
+      var t = await sb.from('menu_items').update({ active: !m.active }).eq('id', m.id).select();
+      if (t.error) { alert('Could not update item: ' + t.error.message); return; }
+      if (!t.data || t.data.length === 0) { alert('Item was not updated. Check admin permissions.'); return; }
+      await loadMenu();
+      return;
+    }
+    if (b.dataset.mdel) {
+      if (!confirm('Delete this item from the menu? Past orders are not affected.')) return;
+      var d = await sb.from('menu_items').delete().eq('id', b.dataset.mdel).select();
+      if (d.error) { alert('Could not delete item: ' + d.error.message); return; }
+      if (!d.data || d.data.length === 0) { alert('Item was not deleted. Check admin permissions.'); return; }
+      if ($('mId').value === b.dataset.mdel) resetMenuForm();
+      await loadMenu();
+    }
+  };
+
+  function fillHourSelects() {
+    var opts = '';
+    for (var h = 0; h < 24; h++) {
+      opts += '<option value="' + h + '">' + (h % 12 || 12) + ':00 ' + (h < 12 ? 'AM' : 'PM') + '</option>';
+    }
+    $('hOpen').innerHTML = opts;
+    $('hClose').innerHTML = opts;
+  }
+
+  async function loadHours() {
+    var r = await sb.from('settings').select('key,value');
+    if (r.error) { $('hErr').textContent = r.error.message; return; }
+    var s = {};
+    (r.data || []).forEach(function (x) { s[x.key] = x.value; });
+    var days = (s.order_days || '').split(',');
+    document.querySelectorAll('#hoursForm .days input').forEach(function (cb) {
+      cb.checked = days.indexOf(cb.value) !== -1;
+    });
+    $('hOpen').value = s.order_open_hour || '18';
+    $('hClose').value = s.order_close_hour || '21';
+    $('hErr').textContent = '';
+  }
+
+  $('hoursForm').onsubmit = async function (e) {
+    e.preventDefault();
+    var days = [];
+    document.querySelectorAll('#hoursForm .days input').forEach(function (cb) {
+      if (cb.checked) days.push(cb.value);
+    });
+    var open = Number($('hOpen').value), close = Number($('hClose').value);
+    if (!days.length) { $('hErr').textContent = 'Choose at least one open day.'; return; }
+    if (close <= open) { $('hErr').textContent = 'Closing time must be after opening time.'; return; }
+    var r = await sb.from('settings').upsert([
+      { key: 'order_days', value: days.join(',') },
+      { key: 'order_open_hour', value: String(open) },
+      { key: 'order_close_hour', value: String(close) }
+    ], { onConflict: 'key' }).select();
+    if (r.error) { $('hErr').textContent = r.error.message; return; }
+    if (!r.data || r.data.length !== 3) { $('hErr').textContent = 'Not saved. Check admin permissions.'; return; }
+    $('hErr').textContent = 'Saved.';
+  };
+
+  $('menuBtn').onclick = function () {
+    var p = $('menuPanel');
+    p.classList.toggle('hidden');
+    if (!p.classList.contains('hidden')) { loadMenu(); loadHours(); }
+  };
+
+  fillHourSelects();
 
   if (!configured) {
     showLogin();
