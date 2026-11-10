@@ -74,7 +74,7 @@
 <section id="login" class="login hidden">
   <h2>Staff login</h2>
   <form id="loginForm">
-    <label>Email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Username<input id="username" type="text" autocomplete="username" required></label>
     <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
     <button type="submit">Sign in</button>
     <p class="err" id="loginErr"></p>
@@ -99,8 +99,8 @@
 <main id="app" class="hidden">
   <section id="account" class="login acct hidden">
     <h2>Account</h2>
-    <p class="pill" id="acctEmail"></p>
     <form id="acctForm">
+      <label>Username<input id="acctUser" type="text" autocomplete="username" required></label>
       <label>Name<input id="acctName" type="text" autocomplete="name"></label>
       <label>New password (min 8 characters)<input id="newPw" type="password" autocomplete="new-password"></label>
       <label>Confirm new password<input id="newPw2" type="password" autocomplete="new-password"></label>
@@ -405,29 +405,41 @@
     $('loginErr').textContent = '';
     if (!sb) { $('loginErr').textContent = 'Setup needed: fill in supabase-config.js.'; return; }
     var r = await sb.auth.signInWithPassword({
-      email: $('email').value.trim(),
+      email: usernameToEmail($('username').value),
       password: $('password').value
     });
     $('password').value = '';
-    if (r.error) { $('loginErr').textContent = 'Wrong email or password.'; return; }
+    if (r.error) { $('loginErr').textContent = 'Wrong username or password.'; return; }
     await enter();
   };
+
+  var EMAIL_DOMAIN = '@yummynam.local';
+  function usernameToEmail(name) {
+    return name.trim().toLowerCase() + EMAIL_DOMAIN;
+  }
+  function emailToUsername(email) {
+    return (email || '').replace(EMAIL_DOMAIN, '');
+  }
 
   async function loadAccount() {
     var r = await sb.auth.getUser();
     var u = r.data && r.data.user;
-    $('acctEmail').textContent = u ? u.email : '';
+    $('acctUser').value = u ? emailToUsername(u.email) : '';
     $('acctName').value = (u && u.user_metadata && u.user_metadata.name) || '';
     $('acctErr').textContent = '';
   }
 
   $('acctForm').onsubmit = async function (e) {
     e.preventDefault();
-    var p = $('newPw').value, p2 = $('newPw2').value, err = '';
-    if (p && p.length < 8) err = 'Password must be at least 8 characters.';
+    var user = $('acctUser').value.trim().toLowerCase(), p = $('newPw').value, p2 = $('newPw2').value, err = '';
+    if (!/^[a-z0-9._-]{3,}$/.test(user)) err = 'Username: at least 3 letters, numbers, dots, dashes or underscores.';
+    else if (p && p.length < 8) err = 'Password must be at least 8 characters.';
     else if (p !== p2) err = 'Passwords do not match.';
     if (err) { $('acctErr').textContent = err; return; }
     var attrs = { data: { name: $('acctName').value.trim() } };
+    var cur = await sb.auth.getUser();
+    var curUser = cur.data && cur.data.user ? emailToUsername(cur.data.user.email) : '';
+    if (user !== curUser) attrs.email = usernameToEmail(user);
     if (p) attrs.password = p;
     var r = await sb.auth.updateUser(attrs);
     if (r.error) { $('acctErr').textContent = r.error.message; return; }
